@@ -1,0 +1,27 @@
+# --- Secrets & Auth ---
+.env
+*.pem
+*.key
+your_ultra_secret_key_123
+
+# --- Build & Binaries ---
+bin/
+*.exe
+*.out
+*.bin
+*.test
+
+# --- Runtime Data (CRITICAL to ignore) ---
+# This prevents your local SQLite DB and logs from being pushed
+data/
+sentinel.db
+logs.json
+
+# --- Node (for target apps) ---
+node_modules/
+npm-debug.log
+
+# --- OS & IDE ---
+.DS_Store
+.vscode/
+.idea/

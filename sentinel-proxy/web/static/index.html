@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Sentinel Monitor</title>
+    <style>
+        body {
+            font-family: monospace;
+            background: #0d1117;
+            color: #00ff88;
+            padding: 20px;
+        }
+
+        h1 {
+            margin-bottom: 20px;
+        }
+
+        #metrics {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+
+        #metrics div, #metrics p {
+            background: #161b22;
+            padding: 15px;
+            border-radius: 10px;
+            min-width: 180px;
+            box-shadow: 0 0 10px rgba(0,255,100,0.1);
+        }
+
+        #log-window {
+            background: #000;
+            border: 1px solid #222;
+            height: 300px;
+            overflow-y: scroll;
+            padding: 10px;
+            margin-top: 20px;
+            border-radius: 10px;
+        }
+
+        input {
+            background: #161b22;
+            color: #fff;
+            border: 1px solid #333;
+            padding: 10px;
+            width: 300px;
+            border-radius: 6px;
+        }
+
+        button {
+            padding: 10px 15px;
+            background: #00ff88;
+            border: none;
+            cursor: pointer;
+            border-radius: 6px;
+            margin-left: 5px;
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+
+    <h1>Sentinel Security Gateway</h1>
+    <input type="text" id="siteUrl" placeholder="Enter Site URL (e.g. https://...)">
+    <button onclick="updateTarget()">Protect Site</button>
+    <button onclick="resetTarget()">Reset Target</button>
+    <p>Try: ?id=1 union select</p>
+    <h2>Metrics</h2>
+
+    <canvas id="trafficChart" height="100"></canvas>
+
+    <div id="metrics">
+        <div>Total Requests: <span id="total">0</span></div>
+        <div>Allowed Traffic: <span id="allowed">0</span></div>
+        <div>Blocked Attacks: <span id="blocked">0</span></div>
+        <p id="top-attack"></p>
+        <p id="top-ip"></p>
+    </div>
+
+    <div>Block Rate: <span id="rate">0%</span></div>
+
+    <div id="log-window"></div>
+
+    <script>
+
+        let chart;
+
+        const eventSource = new EventSource("/logs");
+
+        eventSource.onmessage = (event) => {
+            const logBox = document.getElementById('log-window');
+            const newLog = document.createElement('div');
+
+            const data = event.data;
+
+            const log = JSON.parse(data);
+
+            if (log.action === "blocked") {
+                newLog.innerText = `[BLOCK] ${log.attack_type} | IP: ${log.ip} | Query: ${log.query}`;
+                newLog.style.color = "red";
+            } else {
+                newLog.innerText = `[ALLOW] | IP: ${log.ip} | Query: ${log.query}`;
+            }
+
+            logBox.appendChild(newLog);
+            logBox.scrollTop = logBox.scrollHeight;
+        };
+
+        function updateTarget() {
+            const url = document.getElementById('siteUrl').value;
+            fetch(`/update-target?url=${encodeURIComponent(url)}`);
+            document.getElementById('log-window').innerHTML += `<div>[SYSTEM] Switched target to ${url}</div>`;
+        }
+
+        function fetchStats() {
+            fetch('/stats')
+                .then(res => {
+                    if (!res.ok) {
+                        throw new Error("Rate limited or server error");
+                    }
+                    return res.json();
+                })
+                .then(data => {
+                    // main metrics
+                    document.getElementById('total').innerText = data.total;
+                    document.getElementById('allowed').innerText = data.allowed;
+                    document.getElementById('blocked').innerText = data.blocked;
+                    updateChart(data.timeline);
+
+                    // block rate
+                    const rate = data.total > 0 
+                        ? (data.blocked / data.total * 100).toFixed(1)
+                        : 0;
+
+                    document.getElementById('rate').innerText = rate + "%";
+
+                    document.getElementById('top-attack').innerText =
+                        `Top Attack: ${data.top_attack || "None"} (${data.attack_count || 0})`;
+
+                    document.getElementById('top-ip').innerText =
+                        `Top IP: ${data.top_ip || "None"} (${data.ip_count || 0})`;
+                })
+                .catch(err => {
+                    console.log("Stats error:", err.message);
+                });
+        }
+
+        function updateChart(timeline) {
+            const labels = Object.keys(timeline);
+            const values = Object.values(timeline);
+
+            if (!chart) {
+                const ctx = document.getElementById('trafficChart').getContext('2d');
+                chart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: 'Requests per second',
+                            data: values,
+                            borderWidth: 2
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        scales: {
+                            x: { display: false },
+                            y: { beginAtZero: true }
+                        }
+                    }
+                });
+            } else {
+                chart.data.labels = labels;
+                chart.data.datasets[0].data = values;
+                chart.update();
+            }
+        }
+        // refresh every second
+        setInterval(fetchStats, 1000);
+    </script>
+</body>
+</html>

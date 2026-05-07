@@ -1,0 +1,14 @@
+.env
+.env.*
+**/.env
+*.exe
+*.out
+bin/
+node_modules/
+token.txt
+*.log
+main
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,9 @@
+[
+  { "name": "SQL Injection", "pattern": "(?i)select", "field": "query" },
+  { "name": "SQLi UNION", "pattern": "(?i)union", "field": "query" },
+  { "name": "SQLi Comment", "pattern": "--", "field": "query" },
+  { "name": "SQLi OR 1=1", "pattern": "(?i)or\\s*1=1", "field": "query" },
+  { "name": "XSS Script", "pattern": "(?i)<script", "field": "query" },
+  { "name": "XSS Event", "pattern": "(?i)onerror", "field": "query" },
+  { "name": "Admin Access", "pattern": "/admin", "field": "path" }
+]

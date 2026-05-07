@@ -1,0 +1,23 @@
+# Build / binaries
+main
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Environment / secrets
+.env
+
+# Local test artifacts
+token.txt
+
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# Go build/cache
+bin/
+dist/
+*.test
+coverage.out

@@ -1,0 +1,41 @@
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: sentinel
+    volumes:
+      - postgres_data:/var/lib/postgresql/data # saves the data!
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - sentinel-net 
+
+  idp:
+    build: ./zero-trust-idp
+    container_name: idp
+    ports:
+      - "8080:8080"
+    environment:
+      - DB_URL=postgres://postgres:postgres@db:5432/sentinel?sslmode=disable
+    networks:
+      - sentinel-net
+
+  proxy:
+    build: ./sentinel-proxy
+    container_name: sentinel-proxy
+    ports:
+      - "8081:8081"
+    environment:
+      - IDP_URL=http://idp:8080
+      - TARGET_URL=http://idp:8080
+    networks:
+      - sentinel-net
+
+networks:
+  sentinel-net:
+    driver: bridge
+    name: sentinel-net 
+
+volumes:
+  postgres_data: # Define the volume

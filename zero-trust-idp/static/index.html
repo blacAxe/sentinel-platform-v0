@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Zero Trust IdP</title>
+    <style>
+        body { font-family: sans-serif; display: flex; justify-content: center; padding-top: 50px; background: #f4f7f6; }
+        .card { background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); width: 300px; }
+        input { width: 100%; padding: 10px; margin: 10px 0; box-sizing: border-box; }
+        button { width: 100%; padding: 10px; cursor: pointer; background: #007bff; color: white; border: none; border-radius: 4px; }
+        button:hover { background: #0056b3; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h2>Zero Trust Login</h2>
+        <input type="text" id="username" placeholder="Enter Username">
+        <button onclick="register()">Register Passkey</button>
+        <hr>
+        <button onclick="login()" style="background: #28a745;">Login with Passkey</button>
+    </div>
+
+    <div id="status">Not logged in</div>
+
+    <div id="secret-section" style="display:none;">
+        <button onclick="fetchSecretData()">Access Top Secret Data</button>
+        <p id="secret-output" style="color: green; font-weight: bold;"></p>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@github/webauthn-json@2.1.1/dist/browser-global/webauthn-json.browser-global.min.js"></script>
+
+    <script>
+        async function register() {
+            const username = document.getElementById('username').value;
+            if (!username) return alert("Enter a username");
+
+            // Get options from Go server
+            const response = await fetch(`/register/begin?username=${username}`);
+            const options = await response.json();
+
+            // Trigger Biometric/Security Key prompt
+            const credential = await webauthnJSON.create(options);
+
+            // Send back to server
+            const finish = await fetch(`/register/finish?username=${username}`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(credential)
+            });
+
+            alert(await finish.text());
+        }
+
+        async function login() {
+            const username = document.getElementById('username').value;
+            if (!username) return alert("Enter a username");
+
+            try {
+                const response = await fetch(`/login/begin?username=${username}`);
+                const options = await response.json();
+
+                // THIS is what worked before
+                const assertion = await webauthnJSON.get(options);
+
+                const finish = await fetch(`/login/finish?username=${username}`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(assertion)
+                });
+
+                const text = await finish.text();
+
+                try {
+                    const data = JSON.parse(text);
+
+                    if (data.status === "success") {
+                        localStorage.setItem("jwt_token", data.access_token);
+                        localStorage.setItem("refresh_token", data.refresh_token);
+
+                        document.getElementById('status').innerText = `Logged in as ${username}!`;
+                        document.getElementById('secret-section').style.display = "block";
+                    } else {
+                        alert("Login failed: " + data.message);
+                    }
+                } catch {
+                    console.error("RAW RESPONSE:", text);
+                    alert("Login failed: " + text);
+                }
+
+            } catch (err) {
+                console.error(err);
+                alert("Error during login.");
+            }
+        }
+
+        // Function to test the Protected Route directly from the browser
+        async function fetchSecretData() {
+            const token = localStorage.getItem("jwt_token");
+            
+            const response = await fetch('/api/secret-data', {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+
+            const result = await response.text();
+            document.getElementById('secret-output').innerText = result;
+        }
+    </script>
+</body>
+</html>
