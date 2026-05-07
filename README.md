@@ -1,4 +1,4 @@
-# Sentinel Platform
+# Sentinel Platform v0
 
 ![CI](https://github.com/blacAxe/sentinel-platform/actions/workflows/integration.yml/badge.svg)
 
@@ -8,262 +8,311 @@ Security Engineering / Distributed Systems
 
 ---
 
-## Overview
+# Overview
 
-Sentinel Platform is a full zero trust security system built as a connected set of services rather than isolated components.
+Sentinel Platform v0 is a zero-trust security platform built around identity enforcement, request validation, and edge-layer protection.
 
-It demonstrates how identity, access control, and request protection operate together in a real environment:
+The system separates authentication from enforcement by using an independent Identity Provider and a dedicated security proxy. Every request is validated before reaching protected services.
 
-* identity is issued by a dedicated authentication service
-* every request is verified at the edge
-* enforcement decisions are made before traffic reaches the application
+This version focuses on:
 
-This is not a collection of tools — it is a working security pipeline.
+* passkey-based authentication
+* JWT identity propagation
+* reverse proxy enforcement
+* Web Application Firewall (WAF) protections
+* rate limiting
+* structured security telemetry
+* integration with the LumenLog event pipeline
+
+The project demonstrates how authentication, authorization, and request security can operate together in a production-style architecture.
 
 ---
 
-## Core Idea
-
-The platform is built around one principle:
+# Core Idea
 
 Every request must prove its identity before it is trusted.
 
-There are no implicit sessions, no trusted networks, and no bypass paths.
+Sentinel Platform follows a zero-trust model where:
 
-Identity is created, verified, and enforced on every request.
+* identity is verified independently
+* authorization is enforced at the edge
+* requests are inspected before forwarding
+* malicious traffic is blocked early
+* security events are emitted as structured telemetry
+
+Rather than treating authentication and security as isolated features, the platform combines them into a connected request enforcement pipeline.
 
 ---
 
-## System Architecture
-
-Sentinel Platform is composed of two independent services that work together to enforce a zero trust model.
-
----
-
-## Architecture Diagram
+# System Architecture
 
 ```mermaid
 flowchart LR
 
-    User["User (Browser / Client)"]
+    User["User / Client"]
 
-    subgraph Identity Layer
-        IdP["Identity Provider (IdP)\nWebAuthn + JWT"]
-        DB[(PostgreSQL\nSessions + Tokens)]
+    subgraph IdentityLayer
+        IdP["Zero Trust Identity Provider"]
+        DB[(PostgreSQL)]
     end
 
-    subgraph Security Layer
-        Proxy["Sentinel Proxy\nWAF + RBAC + Rate Limit"]
+    subgraph EnforcementLayer
+        Proxy["Sentinel Proxy"]
     end
 
-    subgraph Application Layer
-        App["Protected Backend API"]
+    subgraph Observability
+        Lumen["LumenLog Pipeline"]
     end
 
-    Logs["Security Events"]
+    subgraph Backend
+        App["Protected Service"]
+    end
 
     User -->|Register / Login| IdP
-    IdP -->|Store Sessions| DB
-    IdP -->|Issue JWT| User
+    IdP --> DB
+    IdP -->|JWT| User
 
-    User -->|Request + JWT| Proxy
-    Proxy -->|Validate Token| IdP
-    Proxy -->|Allow / Block| App
+    User -->|Authenticated Request| Proxy
 
-    Proxy -->|Logs + Metrics| Logs
+    Proxy -->|Allow| App
+    Proxy -->|Security Events| Lumen
 ```
 
 ---
 
-## Live System Layer
+# Architecture Components
 
-The platform is paired with a frontend system (Sentinel OS) that visualizes behavior in real time.
+## Zero Trust Identity Provider
 
-This includes:
+Authentication service responsible for identity creation and session management.
 
-* live request logs streamed from the proxy
-* system metrics (allowed vs blocked traffic)
-* simulated attack scenarios
-* interaction between system components
+Responsibilities:
 
-This layer turns the backend system into something observable and interactive, rather than static.
-
----
-
-### Identity Layer
-
-**Zero Trust Identity Provider**  
-https://github.com/blacAxe/zero-trust-identity-provider
-
-Handles:
-
-- Passkey-based authentication (WebAuthn)
-- JWT access token issuance
-- Refresh token lifecycle and session management
-- User identity and role propagation
+* WebAuthn passkey registration
+* passwordless authentication
+* JWT access token issuance
+* refresh token lifecycle management
+* session persistence in PostgreSQL
 
 ---
 
-### Security Enforcement Layer
+## Sentinel Proxy
 
-**Sentinel Proxy**  
-https://github.com/blacAxe/sentinel-proxy
+Security enforcement gateway positioned in front of protected services.
 
-Handles:
+Responsibilities:
 
-- Reverse proxy request routing
-- JWT validation and role-based access control
-- Web Application Firewall (WAF)
-- Rate limiting and request filtering
-- Security logging and metrics
+* reverse proxy routing
+* JWT validation
+* role-based access control
+* request inspection
+* WAF filtering
+* rate limiting
+* structured security event generation
 
----
-
-### Request Flow
-
-1. User authenticates through the Identity Provider  
-2. IdP issues an access token (JWT)  
-3. Client sends requests through Sentinel Proxy  
-4. Proxy validates token and enforces policies  
-5. Request is forwarded to the target service if allowed  
+The proxy acts as the primary enforcement layer of the system.
 
 ---
 
-This separation reflects how production systems isolate identity from enforcement for scalability and security.
+## LumenLog Integration
+
+Sentinel Platform emits structured telemetry events into LumenLog.
+
+Events include:
+
+* blocked attacks
+* authentication activity
+* rate-limit violations
+* unauthorized access attempts
+* request metadata
+
+This creates real-time observability for security events across the platform.
 
 ---
 
-## Repositories
+# Request Flow
 
-| Component | Description | Link |
-|----------|------------|------|
-| Identity Provider | Authentication, tokens, sessions | https://github.com/blacAxe/zero-trust-identity-provider |
-| Sentinel Proxy | Security enforcement, WAF, routing | https://github.com/blacAxe/sentinel-proxy |
-
----
-
-## Key Features
-
-### Passkey Authentication
-
-* Passwordless login using WebAuthn
-* Hardware-backed or biometric authentication
-* Resistant to phishing and credential theft
-
-### Token-Based Identity
-
-* Short-lived JWT access tokens
-* Role embedded directly in token
-* Stateless verification at the proxy layer
-
-### Refresh Token Lifecycle
-
-* Long-lived refresh tokens stored in database
-* Hashed before storage
-* Used to issue new access tokens without re-authentication
-
-### Role-Based Access Control
-
-* Routes such as /api/admin and /api/user enforced at proxy level
-* Admin-only endpoints blocked for non-admin users
-* Identity enforced before reaching backend
-
-### Web Application Firewall (WAF)
-
-* Detects common attack patterns such as:
-
-  * SQL injection
-  * XSS
-  * suspicious query patterns
-* Blocks malicious requests before they hit the application
-
-### Rate Limiting
-
-* Per-IP request limiting
-* Protects against brute force and scanning
-
-### Observability
-
-* Structured security events generated for every request
-* Real-time logging and metrics
-* Visibility into allowed vs blocked traffic
+1. User authenticates through the Identity Provider
+2. Identity Provider issues JWT access token
+3. Client sends request through Sentinel Proxy
+4. Proxy validates identity and permissions
+5. WAF and rate-limiter inspect the request
+6. Request is either:
+   * forwarded to backend
+   * blocked at the edge
+7. Structured telemetry event emitted to LumenLog
 
 ---
 
-## Example Flow
+# Core Features
 
-### Admin Access (Allowed)
+## Passkey Authentication
 
-Request:
+* passwordless WebAuthn login
+* phishing-resistant authentication
+* hardware-backed credentials
+* browser-native passkey support
 
-curl -H "Authorization: Bearer <admin_token>" http://localhost:8081/api/admin
+---
+
+## JWT-Based Identity
+
+* stateless access verification
+* short-lived access tokens
+* role propagation through JWT claims
+* proxy-side identity enforcement
+
+---
+
+## Refresh Token Lifecycle
+
+* refresh tokens persisted in PostgreSQL
+* hashed before storage
+* renewable sessions without re-authentication
+* server-side session invalidation support
+
+---
+
+## Web Application Firewall (WAF)
+
+Detects and blocks suspicious request patterns.
+
+Current protections include:
+
+* SQL injection detection
+* XSS pattern detection
+* malicious query inspection
+* suspicious payload filtering
+
+Requests are blocked before reaching backend services.
+
+---
+
+## Rate Limiting
+
+* per-IP request limiting
+* brute-force protection
+* automated abuse reduction
+* edge-layer traffic enforcement
+
+---
+
+## Role-Based Access Control
+
+Routes are protected directly at the proxy layer.
+
+Examples:
+
+* admin-only endpoints
+* user-restricted APIs
+* token-based route authorization
+
+Unauthorized traffic is rejected before backend access.
+
+---
+
+## Structured Security Telemetry
+
+Security events are emitted for:
+
+* blocked requests
+* successful authentication
+* failed authorization
+* attack detection
+* rate-limit violations
+
+Telemetry is forwarded into the LumenLog pipeline for storage and alerting.
+
+---
+
+# Example Security Event
+
+```text
+🚨 SECURITY ALERT
+
+User: bob
+Service: sentinel-proxy
+Attack: SQL Injection
+Action: blocked
+Path: /login
+IP: 192.168.x.x
+```
+
+---
+
+# Example Flows
+
+## Allowed Request
+
+```bash
+curl -H "Authorization: Bearer <token>" http://localhost:8081/api/user
+```
 
 Result:
 
-200 OK → Request passes through proxy and returns admin data
+```text
+200 OK
+```
 
 ---
 
-### User Access to Admin Route (Blocked)
+## Unauthorized Admin Access
 
-Request:
-
+```bash
 curl -H "Authorization: Bearer <user_token>" http://localhost:8081/api/admin
+```
 
 Result:
 
-403 Forbidden → blocked by proxy
+```text
+403 Forbidden
+```
 
 ---
 
-### Malicious Request (Blocked by WAF)
+## Malicious Request
 
-Request:
-
-curl "http://localhost:8081/get?q=SELECT FROM users"
+```bash
+curl "http://localhost:8081/?q=' OR 1=1 --"
+```
 
 Result:
 
-Blocked before reaching backend
+```text
+Blocked by WAF
+```
 
 ---
 
-## Project Structure
+# Project Structure
 
-### Identity Provider
+## Identity Provider
 
-* /handlers → authentication, token logic, WebAuthn flows
-* /db → PostgreSQL integration and session storage
-* /static → frontend for login and testing
-
-### Sentinel Proxy
-
-* /proxy → reverse proxy and routing logic
-* /middleware → rate limiting, WAF, request pipeline
-* /events → structured security logging
-* /metrics → traffic and attack analytics
-* /config → environment configuration
+* `/handlers` → authentication and token flows
+* `/db` → PostgreSQL integration
+* `/static` → login and testing frontend
 
 ---
 
-## Running the Platform
+## Sentinel Proxy
 
-Sentinel Platform is fully containerized and runs as a multi-service system using Docker Compose.
-
-All services are designed to run together as a single system using Docker, mirroring how distributed services are deployed in production environments.
+* `/proxy` → reverse proxy routing
+* `/middleware` → WAF and rate limiting
+* `/events` → security telemetry emission
+* `/config` → environment configuration
 
 ---
 
-### 1. Prerequisites
+# Running the Platform
+
+## Prerequisites
 
 * Docker
 * Docker Compose
 
 ---
 
-### 2. Start the System
-
-From the root directory:
+## Start the System
 
 ```bash
 docker compose up --build
@@ -271,28 +320,15 @@ docker compose up --build
 
 ---
 
-### 3. Services
-
-Once running, the platform exposes:
-
-* **Identity Provider (IdP)**
-  http://localhost:8080
-
-* **Sentinel Proxy (Security Gateway)**
-  http://localhost:8081
-
-* **PostgreSQL Database**
-  Runs internally (port 5432)
-
----
-
-### 4. Stopping the System
+## Stop the System
 
 ```bash
 docker compose down
 ```
 
-To remove volumes (fresh reset):
+---
+
+## Fresh Reset
 
 ```bash
 docker compose down -v
@@ -300,93 +336,85 @@ docker compose down -v
 
 ---
 
-### 5. Notes
+# Services
 
-* The database is automatically initialized using `db/init.sql`
-* All services are networked internally via Docker
-* Environment variables are managed through `docker-compose.yml`
-* No manual service startup is required
+| Service | Port |
+|---|---|
+| Identity Provider | 8080 |
+| Sentinel Proxy | 8081 |
+| PostgreSQL | 5432 |
 
 ---
 
-### 6. Quick Test
+# Quick Test
 
-After startup, verify the system:
+## Open Browser
+
+```text
+http://localhost:8080
+```
+
+Register a passkey and authenticate.
+
+---
+
+## Test Proxy
 
 ```bash
-curl http://localhost:8080
 curl http://localhost:8081
 ```
 
 ---
 
-### 7. CI Validation
-
-This project includes a GitHub Actions pipeline that:
-
-* Builds all services
-* Starts the full system
-* Runs integration checks on endpoints
-
-Every push to `main` is automatically tested.
----
-
-## Demo Flow
-
-1. Open browser at localhost:8080
-2. Register a passkey
-3. Login and receive tokens
-4. Send request through proxy:
+## Test SQL Injection Detection
 
 ```bash
-curl -H "Authorization: Bearer <token>" http://localhost:8081/api/user
+curl "http://localhost:8081/?q=' OR 1=1 --"
 ```
 
-5. Try admin route with non-admin token → blocked
-6. Try malicious query → blocked by WAF
+---
 
-This demonstrates identity + enforcement working together.
+## Test XSS Detection
+
+```bash
+curl "http://localhost:8081/?q=<script>alert(1)</script>"
+```
 
 ---
 
-## Security Design Decisions
+# Tech Stack
 
-* No password storage anywhere in the system
-* Access tokens expire quickly to reduce exposure
-* Refresh tokens are hashed and stored server-side
-* All access control enforced at the proxy layer
-* Every request validated independently
-* WAF acts as an additional defensive layer
-
----
-
-## Tech Stack
-
-* Go (backend services and proxy)
-* WebAuthn (passkey authentication)
-* PostgreSQL (session and token storage)
-* JWT (access and refresh tokens)
-* net/http reverse proxy
-* Vanilla JavaScript frontend
+* Go
+* WebAuthn
+* JWT
+* PostgreSQL
+* Docker
+* Reverse Proxy (net/http)
+* Protobuf
+* Redpanda
+* ClickHouse
 
 ---
 
-## What This Project Demonstrates
+# What This Project Demonstrates
 
-This project shows how to build a real security pipeline:
+This project demonstrates:
 
-* designing identity systems from scratch
-* enforcing access control at the edge
-* building a custom WAF engine
-* structuring systems as connected services
-* thinking in terms of zero trust architecture
+* zero-trust architecture
+* edge-layer request enforcement
+* custom reverse proxy security design
+* passkey authentication systems
+* JWT identity propagation
+* WAF implementation
+* rate-limiting systems
+* distributed telemetry pipelines
+* event-driven security observability
+* containerized distributed services
 
 ---
 
-## Closing Note
+# Closing Note
 
-Sentinel Platform is not just an authentication service or a proxy.
+Sentinel Platform v0 is an experimental zero-trust enforcement platform focused on identity-aware request security and telemetry generation.
 
-It is a system that shows how identity and security should work together in practice.
-
-The goal is to move beyond isolated features and toward a complete, enforceable security model.
+The project explores how authentication, edge protection, and observability can work together as one connected security system.
