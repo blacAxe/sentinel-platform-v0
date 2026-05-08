@@ -24,7 +24,14 @@
 
     <div id="secret-section" style="display:none;">
         <button onclick="fetchSecretData()">Access Top Secret Data</button>
-        <p id="secret-output" style="color: green; font-weight: bold;"></p>
+
+        <button onclick="logout()" style="background:red;">
+            Logout
+        </button>
+
+        <p id="secret-output"
+        style="color: green; font-weight: bold;">
+        </p>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/@github/webauthn-json@2.1.1/dist/browser-global/webauthn-json.browser-global.min.js"></script>
@@ -107,6 +114,14 @@
             document.getElementById('secret-output').innerText = result;
         }
 
+        function logout() {
+            localStorage.removeItem("jwt_token");
+            localStorage.removeItem("refresh_token");
+
+            document.getElementById('status').innerText = "Not logged in";
+            document.getElementById('secret-section').style.display = "none";
+        }
+
         async function restoreSession() {
             const token = localStorage.getItem("jwt_token");
 
@@ -119,18 +134,26 @@
             }
 
             try {
-                const payload = JSON.parse(atob(token.split('.')[1]));
+                const response = await fetch('/api/secret-data', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
 
-                const username = payload.username || payload.sub || "unknown";
+                if (response.ok) {
+                    const payload = JSON.parse(atob(token.split('.')[1]));
 
-                document.getElementById('status').innerText = `Logged in as ${username}!`;
-                document.getElementById('secret-section').style.display = "block";
+                    document.getElementById('status').innerText =
+                        `Logged in as ${payload.username}!`;
+
+                    document.getElementById('secret-section').style.display = "block";
+                } else {
+                    logout();
+                }
 
             } catch (err) {
-                console.error("JWT decode failed:", err);
-
-                document.getElementById('status').innerText = "Not logged in";
-                document.getElementById('secret-section').style.display = "none";
+                console.error("Session restore failed", err);
+                logout();
             }
         }
 
