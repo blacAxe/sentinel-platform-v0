@@ -1,15 +1,14 @@
-name: Go CI
+name: Sentinel Platform CI
 
 on:
   push:
     branches:
       - main
   pull_request:
-    branches:
-      - main
 
 jobs:
   test:
+    name: Build and Test
     runs-on: ubuntu-latest
 
     steps:
@@ -21,11 +20,11 @@ jobs:
         with:
           go-version: '1.26'
 
-      - name: Verify Dependencies
-        run: go mod tidy
+      - name: Download Dependencies
+        run: go mod download
 
-      - name: Build Project
+      - name: Verify Build
         run: go build ./...
 
       - name: Run Tests
-        run: go test ./... -v
+        run: go test ./...
