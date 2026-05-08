@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,7 +12,6 @@ import (
 	"os"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/omar/sentinel-proxy/internal/config"
@@ -135,61 +135,29 @@ func proxyTo(target *url.URL, w http.ResponseWriter, r *http.Request) {
 	io.Copy(w, resp.Body)
 }
 
-// shipToLumen sends security events to the Lumen Ingestor
-func shipToLumen(r *http.Request, action string, attackType string) {
-	ingestorURL := "http://lumen-ingestor:9001/events"
-
-	// --- IDENTITY EXTRACTION ---
-	userID := "anonymous"
-	auth := r.Header.Get("Authorization")
-	if auth == "" {
-		if cookie, err := r.Cookie("access_token"); err == nil {
-			auth = cookie.Value
-		}
-	}
-
-	if auth != "" {
-		if name, err := DecodeUsernameFromToken(auth); err == nil {
-			userID = name
-		}
-	}
-
-	event := map[string]string{
-		"user_id":     userID,
-		"attack_type": attackType,
-		"action":      action,
-	}
-
-	if reqID := r.Header.Get("X-Request-ID"); reqID != "" {
-		event["request_id"] = reqID
-	}
-
-	payload, _ := json.Marshal(event)
-	client := &http.Client{Timeout: 2 * time.Second}
-
-	go func() {
-		resp, err := client.Post(ingestorURL, "application/json", strings.NewReader(string(payload)))
-		if err == nil {
-			resp.Body.Close()
-		}
-	}()
-}
-
 // DecodeUsernameFromToken pulls 'bob' out of the JWT
 func DecodeUsernameFromToken(tokenString string) (string, error) {
-	tokenString = strings.TrimPrefix(tokenString, "Bearer ")
-	// Parse without validation because the IDP already validated it; we just need the name
-	token, _, err := new(jwt.Parser).ParseUnverified(tokenString, jwt.MapClaims{})
+
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		return []byte(os.Getenv("JWT_SECRET")), nil
+	})
+
 	if err != nil {
-		return "anonymous", err
+		return "", err
 	}
 
-	if claims, ok := token.Claims.(jwt.MapClaims); ok {
-		if username, ok := claims["sub"].(string); ok {
-			return username, nil
+	if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
+
+		if name, ok := claims["username"].(string); ok {
+			return name, nil
+		}
+
+		if sub, ok := claims["sub"].(string); ok {
+			return sub, nil
 		}
 	}
-	return "anonymous", fmt.Errorf("no sub claim found")
+
+	return "", fmt.Errorf("invalid token")
 }
 
 // =========================
@@ -208,10 +176,7 @@ func (a *App) Start() {
 	}
 
 	reverseProxy := httputil.NewSingleHostReverseProxy(idpURL)
-
 	mux := http.NewServeMux()
-
-	// IDP Routes
 	idpProxy := httputil.NewSingleHostReverseProxy(idpURL)
 
 	authHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -223,7 +188,6 @@ func (a *App) Start() {
 	mux.Handle("/register/", authHandler)
 	mux.Handle("/", authHandler)
 
-	// Sentinel Platform / Dashboard Routes
 	mux.HandleFunc("/stats", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(metrics.GetStats())
@@ -232,64 +196,50 @@ func (a *App) Start() {
 
 	// MAIN HANDLER WITH MIDDLEWARE
 	finalHandler := middleware.CORS(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("REQUEST -> %s %s", r.Method, r.URL.Path)
-		path := r.URL.Path
+		// Identify the user FIRST
+		userID := "anonymous"
 
-		// Let Sentinel Platform and IDP routes bypass the heavy WAF/Limiter chain
-		if strings.HasPrefix(path, "/stats") ||
-			strings.HasPrefix(path, "/logs") {
-			mux.ServeHTTP(w, r)
-			return
+		auth := r.Header.Get("Authorization")
+
+		// Fallback to access_token cookie
+		if auth == "" {
+			cookie, err := r.Cookie("access_token")
+			if err == nil {
+				auth = cookie.Value
+			}
 		}
 
-		// Security Chain for the main application
+		// Remove Bearer prefix if present
+		if after, ok := strings.CutPrefix(auth, "Bearer "); ok {
+			auth = after
+		}
+
+		log.Printf("AUTH TOKEN: %s", auth)
+
+		if auth != "" {
+			if name, err := DecodeUsernameFromToken(auth); err == nil {
+				userID = name
+			}
+		}
+
+		log.Printf("DECODED USER: %s", userID)
+
+		// Attach the Identity to the Request Context
+		// update 'r' directly so that all subsequent handlers see the user_id
+		ctx := context.WithValue(r.Context(), "user_id", userID)
+		r = r.WithContext(ctx)
+
 		securedHandler := middleware.Chain(
 			middleware.RequestID,
 			middleware.RateLimiter,
-			middleware.WAF,
+			middleware.WAF, // WAF will now find "jon" in the context
 		)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-
-			attack := r.Header.Get("X-Sentinel-Attack")
-
-			if attack != "" {
-
-				shipToLumen(r, "blocked", attack)
-
-				userID := "anonymous"
-
-				auth := r.Header.Get("Authorization")
-
-				if auth == "" {
-					if cookie, err := r.Cookie("access_token"); err == nil {
-						auth = cookie.Value
-					}
-				}
-
-				if auth != "" {
-					if name, err := DecodeUsernameFromToken(auth); err == nil {
-						userID = name
-					}
-				}
-
-				event := map[string]interface{}{
-					"user_id":     userID,
-					"attack_type": attack,
-					"action":      "blocked",
-					"method":      r.Method,
-					"path":        r.URL.Path,
-					"ip":          r.RemoteAddr,
-					"timestamp":   time.Now().Unix(),
-				}
-
-				payload, _ := json.Marshal(event)
-				broadcast(string(payload))
-			}
-
-			log.Printf("Forwarding to IDP: %s", r.URL.Path)
+			// This block handles cases where the WAF flags but allows the request to continue[cite: 6]
 
 			reverseProxy.ServeHTTP(w, r)
 		}))
 
+		// Execute the chain with the updated request 'r'
 		securedHandler.ServeHTTP(w, r)
 	}))
 

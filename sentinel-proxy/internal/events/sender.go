@@ -3,33 +3,48 @@ package events
 import (
 	"bytes"
 	"encoding/json"
+	"log"
 	"net/http"
+	"time"
 )
 
 func SendEvent(event SecurityEvent) {
 
-    // Create a map to add extra context for LumenLog
-    eventMap := make(map[string]interface{})
-    
-    eventMap["request_id"] = event.RequestID
-    eventMap["ip"] = event.IP
-    eventMap["path"] = event.Path
-    eventMap["action"] = event.Action
-    eventMap["attack_type"] = event.AttackType
-    
-    // Add placeholder for user 
-    eventMap["user_id"] = "anonymous" 
+	eventMap := map[string]interface{}{
+		"event_type":  event.EventType,
+		"request_id":  event.RequestID,
+		"user_id":     event.User,
+		"ip":          event.IP,
+		"path":        event.Path,
+		"method":      event.Method,
+		"query":       event.Query,
+		"attack_type": event.AttackType,
+		"action":      event.Action,
+		"timestamp":   event.Timestamp,
+	}
 
-    jsonData, _ := json.Marshal(eventMap)
+	jsonData, err := json.Marshal(eventMap)
+	if err != nil {
+		log.Printf("JSON marshal failed: %v", err)
+		return
+	}
 
-	resp, err := http.Post(
-		"http://localhost:9001/events",
+	client := &http.Client{
+		Timeout: 2 * time.Second,
+	}
+
+	resp, err := client.Post(
+		"http://host.docker.internal:7777/event",
 		"application/json",
 		bytes.NewBuffer(jsonData),
 	)
 
 	if err != nil {
+		log.Printf("Rust agent unreachable: %v", err)
 		return
 	}
+
 	defer resp.Body.Close()
+
+	log.Printf("Event shipped to Rust agent for user: %s", event.User)
 }

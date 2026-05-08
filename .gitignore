@@ -1,14 +1,36 @@
+# Environment files
 .env
 .env.*
 **/.env
+**/.env.*
+
+# Binaries
 *.exe
 *.out
-bin/
-node_modules/
-token.txt
-*.log
+*.test
 main
+bin/
 
-# OS
+# Logs
+*.log
+
+# Node
+node_modules/
+
+# OS files
 .DS_Store
 Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Go coverage
+coverage.out
+
+# Temporary files
+tmp/
+dist/
+
+# Secrets
+token.txt

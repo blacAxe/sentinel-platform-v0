@@ -1,8 +1,6 @@
 package middleware
 
 import (
-	"bytes"
-	"encoding/json"
 	"net"
 	"net/http"
 	"strings"
@@ -68,10 +66,17 @@ func RateLimiter(next http.Handler) http.Handler {
 		if len(client.Requests) > 10 {
 			requestID := r.Context().Value(RequestIDKey).(string)
 
+			val := r.Context().Value("user_id")
+			userID, _ := val.(string)
+
+			if userID == "" {
+				userID = "anonymous"
+			}
+
 			event := events.SecurityEvent{
 				EventType:      "rate_limited",
 				RequestID:      requestID,
-				User:           "anonymous",
+				User:           userID,
 				IP:             ip,
 				Path:           r.URL.Path,
 				Method:         r.Method,
@@ -86,9 +91,6 @@ func RateLimiter(next http.Handler) http.Handler {
 			events.SendEvent(event)
 			metrics.IncBlocked()
 			metrics.IncAttack("RATE_LIMIT")
-
-			// --- ADD THIS LINE ---
-			shipToLumen(event)
 			// ---------------------
 
 			http.Error(w, "Too many requests", http.StatusTooManyRequests)
@@ -97,15 +99,4 @@ func RateLimiter(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r)
 	})
-}
-
-func shipToLumen(event events.SecurityEvent) {
-
-	ingestorURL := "http://lumen-ingestor:9001/events"
-
-	jsonData, _ := json.Marshal(event)
-
-	go func() {
-		http.Post(ingestorURL, "application/json", bytes.NewBuffer(jsonData))
-	}()
 }
