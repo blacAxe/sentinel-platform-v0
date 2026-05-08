@@ -1,141 +1,191 @@
-# Zero Trust Identity Provider (IdP)
+# **Zero Trust Identity Provider (IdP)**
 
-## Category
+## **Category**
 
 Identity and Access Management (IAM) / Security Engineering
 
-## Overview
+## **Overview**
 
-This project is a Go-based authentication service that replaces traditional passwords with passkeys using WebAuthn and implements a production-style token lifecycle. It acts as the central identity authority for a zero trust architecture, issuing verifiable identity tokens that are consumed by downstream services such as a security proxy.
+This project is a Go-based authentication service that replaces traditional passwords with passkeys using WebAuthn and implements a production-style token lifecycle.
 
-The system now goes beyond basic authentication and demonstrates role-aware identity, protected APIs, and real-world service integration patterns.
+It acts as the central identity authority for a zero trust architecture, issuing verifiable identity tokens that are consumed by downstream services such as Sentinel Proxy.
+
+The system now goes beyond basic authentication and demonstrates:
+
+* passwordless authentication
+* role-aware authorization
+* protected APIs
+* session management
+* refresh token rotation
+* distributed service integration
+
+It is designed to feel closer to a real backend identity service rather than a small authentication demo.
 
 ---
 
-## How it Works
+## **How it Works**
 
-### Biometric Authentication
+### **Biometric Authentication**
 
-Users register and authenticate using passkeys through the WebAuthn API. This enables hardware-backed or biometric authentication such as fingerprint or face recognition without relying on passwords.
+Users register and authenticate using passkeys through the WebAuthn API.
 
-### Token-Based Identity
+This enables hardware-backed or biometric authentication such as:
 
-After successful authentication, the server issues a short-lived access token containing:
+* fingerprint recognition
+* Face ID
+* Windows Hello
+* security keys
+
+without relying on passwords.
+
+---
+
+### **Token-Based Identity**
+
+After successful authentication, the server issues a short-lived JWT access token containing:
 
 * user identity
 * username
-* role (admin or user)
+* role (`admin` or `user`)
 
-This token is used to access protected resources across services.
-
-### Refresh Token Lifecycle
-
-In addition to access tokens, the system issues long-lived refresh tokens. These are stored securely in the database and used to obtain new access tokens without requiring the user to authenticate again.
-
-### Zero Trust Enforcement
-
-Every request to a protected endpoint must include a valid access token. No request is trusted by default, and all access is verified through cryptographic validation.
+This token is then used to access protected APIs and downstream services.
 
 ---
 
-## Role-Based Access (New)
+### **Refresh Token Lifecycle**
 
-The system now includes role-aware endpoints to simulate real backend authorization.
+In addition to access tokens, the system issues long-lived refresh tokens.
 
-### API Routes
+These tokens are:
+
+* securely stored in PostgreSQL
+* hashed before persistence
+* tied to server-side sessions
+* used to generate new access tokens
+
+This allows users to remain authenticated without repeatedly logging in.
+
+---
+
+### **Zero Trust Enforcement**
+
+Every request to a protected endpoint must include a valid access token.
+
+No request is trusted automatically, and all access decisions are verified through cryptographic validation.
+
+This mirrors real zero trust identity enforcement models used in modern systems.
+
+---
+
+## **Role-Based Access**
+
+The system includes role-aware endpoints to simulate real backend authorization behavior.
+
+### **API Routes**
 
 * `/api/admin`
-  Returns admin-only data
+  Admin-only endpoint
 
 * `/api/user`
-  Returns general user data
+  General authenticated user endpoint
 
 * `/api/secret-data`
-  Protected route requiring a valid JWT
+  Protected endpoint requiring a valid JWT
 
-### Behavior
+---
+
+### **Authorization Behavior**
 
 * Admin tokens can access both admin and user routes
 * User tokens can only access user routes
-* All protected routes require a valid JWT
+* All protected routes require valid JWT verification
 
-This allows downstream systems (like Sentinel) to enforce authorization without needing direct database access.
+This allows downstream systems such as Sentinel Proxy to enforce authorization without requiring direct database access.
 
 ---
 
-## Authentication Flow (Production Design)
+## **Authentication Flow**
 
-### Access Tokens
+### **Access Tokens**
 
-* Short-lived JWTs with a 15 minute expiration
-* Contain user identity and role
-* Used for authenticating API requests
-* Stateless and verified on every request
+* Short-lived JWTs
+* 15 minute expiration
+* Stateless validation
+* Contain identity and role claims
 
-### Refresh Tokens
+Used for authenticating API requests.
 
-* Long-lived tokens with a 7 day expiration
-* Stored in PostgreSQL as hashed values
+---
+
+### **Refresh Tokens**
+
+* Long-lived tokens
+* 7 day expiration
+* Stored as hashed values in PostgreSQL
 * Used to generate new access tokens
-* Never stored or transmitted in plain text
 
-### Session Management
+Refresh tokens are never stored or transmitted in plain text after issuance.
 
-* Each login creates a session record in the database
+---
+
+### **Session Management**
+
+* Every login creates a database-backed session
 * Refresh tokens are validated against stored sessions
-* Logout deletes the session, immediately invalidating the refresh token
+* Logout invalidates the active session immediately
 
-### Security Design Decisions
+This provides explicit revocation behavior similar to production identity systems.
+
+---
+
+### **Security Design Decisions**
 
 * Refresh tokens are hashed before storage
-* Access tokens are short-lived to limit exposure
+* Access tokens are intentionally short-lived
 * WebAuthn provides phishing-resistant authentication
-* Server-side session storage allows explicit revocation
+* Session persistence enables revocation and lifecycle management
+* JWT claims allow external authorization enforcement
 
-This mirrors how real identity providers manage sessions and token rotation.
-
----
-
-## Central Pipeline Integration
-
-This IdP is designed to plug directly into a distributed security pipeline:
-
-1. Authentication
-   The user logs in and receives an access token and refresh token
-
-2. Authorization
-   Tokens include roles that downstream services can enforce
-
-3. Verification
-   External services validate JWT signatures using the shared secret
-
-4. Enforcement
-   A proxy layer (Sentinel) can enforce access control based on token claims
-
-5. Observability
-   Identity data can be propagated for logging and monitoring
+The architecture mirrors how modern identity providers manage authentication and token rotation internally.
 
 ---
 
-## Project Structure
+## **Distributed System Integration**
+
+This IdP is designed to integrate directly into a distributed security architecture.
+
+### **Identity Pipeline**
+
+1. User authenticates with WebAuthn
+2. Server issues access token and refresh token
+3. Downstream services validate JWT signatures
+4. Sentinel Proxy enforces authorization rules
+5. Security events can be propagated into observability pipelines
+6. Identity metadata becomes available for centralized logging and analytics
+
+This allows authentication, authorization, and observability systems to remain loosely coupled while sharing trusted identity information.
+
+---
+
+## **Project Structure**
 
 * `/handlers`
-  Authentication logic, WebAuthn flows, JWT handling, and API endpoints
+  Authentication flows, JWT handling, WebAuthn logic, protected APIs
 
 * `/db`
-  PostgreSQL integration, user persistence, and session storage
+  PostgreSQL integration, user persistence, session management
 
 * `/internal`
-  Supporting utilities and token logic
+  Supporting utilities and token helpers
 
 * `/static`
-  Minimal frontend used to test authentication and protected routes
+  Minimal frontend used for authentication and API testing
 
 ---
 
-## Running the Project
+## **Running the Project**
 
-### 1. Start PostgreSQL
+### **1. Start PostgreSQL**
 
 ```bash
 docker run --name idp-postgres \
@@ -147,7 +197,7 @@ docker run --name idp-postgres \
 
 ---
 
-### 2. Create Required Tables
+### **2. Create Required Tables**
 
 ```sql
 CREATE TABLE users (
@@ -168,7 +218,7 @@ CREATE TABLE sessions (
 
 ---
 
-### 3. Configure Environment Variables
+### **3. Configure Environment Variables**
 
 Create a `.env` file:
 
@@ -181,7 +231,7 @@ REFRESH_TOKEN_EXPIRY=168h
 
 ---
 
-### 4. Run the Server
+### **4. Run the Server**
 
 ```bash
 go run main.go
@@ -189,98 +239,113 @@ go run main.go
 
 ---
 
-### 5. Access the Application
+### **5. Access the Application**
 
 Open:
 
+```txt
 http://localhost:8080
+```
 
 Register a passkey and log in.
 
 ---
 
-## Testing the System
+## **Testing the System**
 
-### Login
+### **Login Flow**
 
 * Register a user
-* Login with passkey
+* Login using passkey authentication
 * Receive access and refresh tokens
 
-### Test Role-Based Routes
+---
+
+### **Test Role-Based Routes**
 
 ```bash
 curl http://localhost:8080/api/admin
 curl http://localhost:8080/api/user
 ```
 
-Expected:
+Expected behavior:
 
-* `/api/admin` → admin data
-* `/api/user` → general data
+* `/api/admin` returns admin-only data
+* `/api/user` returns general user data
 
-### Test Protected Route
+---
 
-```bash
-curl -H "Authorization: Bearer <token>" http://localhost:8080/api/secret-data
-```
-
-Expected:
-
-* Valid token → returns secret data
-* Missing/invalid token → unauthorized
-
-### Refresh Token
+### **Test Protected Route**
 
 ```bash
-curl -H "X-Refresh-Token: <token>" http://localhost:8080/auth/refresh
+curl -H "Authorization: Bearer <token>" \
+http://localhost:8080/api/secret-data
 ```
 
-Expected:
+Expected behavior:
+
+* Valid token → protected data returned
+* Invalid token → unauthorized response
+
+---
+
+### **Refresh Token Flow**
+
+```bash
+curl -H "X-Refresh-Token: <token>" \
+http://localhost:8080/auth/refresh
+```
+
+Expected behavior:
 
 * New access token returned
 
-### Logout
+---
+
+### **Logout Flow**
 
 ```bash
-curl -H "X-Refresh-Token: <token>" http://localhost:8080/auth/logout
+curl -H "X-Refresh-Token: <token>" \
+http://localhost:8080/auth/logout
 ```
 
-Expected:
+Expected behavior:
 
-* Session deleted
+* Session removed
 * Future refresh attempts fail
 
 ---
 
-## Security Notes
+## **Security Notes**
 
 * Refresh tokens are never stored in plain text
-* Access tokens expire quickly to reduce risk
-* Sessions are stored server-side for revocation
+* Access tokens expire quickly to reduce exposure
+* Sessions are persisted server-side for revocation
 * WebAuthn removes password-based attack vectors
-* Role claims allow external enforcement without DB access
+* JWT claims allow external authorization enforcement
 
 ---
 
-## Tech Stack
+## **Tech Stack**
 
 * Go (Golang)
 * WebAuthn (Passkeys)
 * PostgreSQL
 * JWT (Access and Refresh Tokens)
-* Vanilla JavaScript (Frontend)
+* Vanilla JavaScript
+* Docker
 
 ---
 
-## What This Demonstrates
+## **What This Demonstrates**
 
-This project shows how a modern identity provider works in practice:
+This project demonstrates how a modern identity provider works internally:
 
 * passwordless authentication
-* secure session management
+* secure session lifecycle management
 * token-based identity
 * role-based access control
-* integration with external enforcement layers
+* cryptographic verification
+* integration with external security systems
 
-It is designed to feel like a real backend system rather than a demo, and it connects directly into a broader zero trust architecture.
+The goal was to build a realistic authentication and authorization system that could integrate directly into a broader zero trust architecture.
